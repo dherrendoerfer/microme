@@ -8,6 +8,16 @@ The name 'microME' is a fusion of microcontroller and HOME
 The PCB to this project can be found here:
 https://easyeda.com/dherrendoerfer/my-home-computer
 
+# hardware features
+Currently the following is part of the board:
+ * VGA port
+ * 2 Commodore DSUB-9 joystick ports
+ * Speaker out
+ * Line (analog) in
+ * 2x Midi DIN5 (or an onboard ESP8266)
+ * A printer port (freely programmable 13 IOs on the Arduino)
+ * Full-size front-facing SD-Card module
+ 
 # goal
 The goal of this project is to produce a simple computer, that has a 80s look and feel to it, starts into a built-in BASIC interpreter, has simple I/O interfaces for measuring and controlling things, and that's it.
 Everything else is a premium.
