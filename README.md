@@ -6,8 +6,11 @@ The name 'microME' is a fusion of microcontroller and HOME
 
 # idea, background, updates, and status
 I'm covering the development process on my YouTube Channel, the main intro is available here:
+
 https://youtu.be/XxIDlw_HDMk
+
 The Playlist with all updates can be found here:
+
 https://www.youtube.com/playlist?list=PLotvT33qzzfLngX3hz38-cLI_gx5IjP4y
 
 # hardware
