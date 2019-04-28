@@ -34,35 +34,36 @@ void led_init()
 
 void led_msg()
 {
-  uint8_t type=msgbuffer[0] & 0xF0;
+  uint8_t type=SERMSG_MSGTYPE;
 
   if (type == SERMSG_PUT_SHORT){
-    if (msgbuffer[1] < 30) { 
-      LEDS[msgbuffer[1]] = msgbuffer[2];
+    if (SERMSG_ADDRESS < 30) { 
+      LEDS[SERMSG_ADDRESS] = SERMSG_DATA;
     }
     else {
-      uint8_t led = (msgbuffer[1]-30)*3;
-      LEDS[led++] = msgbuffer[2];
-      LEDS[led++] = msgbuffer[2];
-      LEDS[led++] = msgbuffer[2];
+      uint8_t led = (SERMSG_ADDRESS-30)*3;
+      LEDS[led++] = (SERMSG_DATA & B00011100) << 3;
+      LEDS[led++] = (SERMSG_DATA & B11100000);
+      LEDS[led++] = (SERMSG_DATA & B00000011) << 6;
     }
     led_update = 1;
   }
   else if (type == SERMSG_SEND_SHORT) {
-    if (msgbuffer[1] < 30) { 
-      LEDS[msgbuffer[1]] = msgbuffer[2];
+    if (SERMSG_ADDRESS < 30) { 
+      LEDS[SERMSG_ADDRESS] = SERMSG_DATA;
       led_update = 1;
     }
-    else if (msgbuffer[1] < 40) { 
-      uint8_t led = msgbuffer[1]-30;
-      LEDS[led++] = msgbuffer[2];
-      LEDS[led++] = msgbuffer[2];
-      LEDS[led++] = msgbuffer[2];
+    else if (SERMSG_ADDRESS < 40) { 
+      uint8_t led = SERMSG_ADDRESS-30;
+      LEDS[led++] = (SERMSG_DATA & B00011100) << 3;
+      LEDS[led++] = (SERMSG_DATA & B11100000);
+      LEDS[led++] = (SERMSG_DATA & B00000011) << 6;
       led_update = 1;
     }
     else {
-      led_mode[msgbuffer[1]-40] = msgbuffer[2];
+      led_mode[SERMSG_ADDRESS-40] = SERMSG_DATA;
     }
+    sermsg_send_confirm(TARGET_TEENSY, 1);
   }
 }
 

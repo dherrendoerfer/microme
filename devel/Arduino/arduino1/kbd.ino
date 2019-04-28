@@ -48,23 +48,24 @@ void calc_diff()
 
 void kbd_msg()
 {
-  uint8_t type=msgbuffer[0] & 0xF0;
+  uint8_t type=SERMSG_MSGTYPE;
 
   if (type == SERMSG_GET_SHORT){
-    if (msgbuffer[1] == 1) {
+    if (SERMSG_ADDRESS == 1) {
       digitalWrite(6,LOW);
-      if (sermsg_send_get_reply(&Serial, 1, kbd_kbdbuf[kbd_kbd_floor]) == 0) {
+      if (sermsg_send_get_reply(TARGET_TEENSY, 1, kbd_kbdbuf[kbd_kbd_floor]) == 0) {
         kbd_kbd_floor++;
         calc_diff();
       }
     }
-    else if (msgbuffer[1] == 2) {
-      sermsg_send_get_reply(&Serial, 2, kbd_diff);
+    else if (SERMSG_ADDRESS == 2) {
+      sermsg_send_get_reply(TARGET_TEENSY, 2, kbd_diff);
     }
   }
   else if (type == SERMSG_SEND_SHORT) {
-    if (msgbuffer[1] == 0)
-      kbd_mode=msgbuffer[2];
+    if (SERMSG_ADDRESS == 0)
+      kbd_mode=SERMSG_DATA;
+    sermsg_send_confirm(TARGET_TEENSY, 1);
   }
 }
 
@@ -88,21 +89,14 @@ int kbd_loop()
         calc_diff();
       } 
     }
-
-
-//    Serial.print((int)((unsigned char)kbd_diff));
-//    Serial.print(" ");
-//    Serial.print((int)((unsigned char)kbd_kbd_ceil));
-//    Serial.print(" ");
-//    Serial.println((int)((unsigned char)kbd_kbd_floor));
     
     if ( kbd_diff != kbd_lastdiff ) {
       kbd_lastdiff=kbd_diff;
-      if ( kbd_diff )
+      if ( kbd_diff && !msgevent)
         digitalWrite(6,HIGH);
       else
         digitalWrite(6,LOW);
     } 
   }
-  return;
+  return(0);
 }

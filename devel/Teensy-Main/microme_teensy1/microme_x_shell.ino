@@ -33,12 +33,51 @@ static uint8_t isanumber(char *val)
   return 1;
 }
 
-static uint8_t line[256] = {0};
-static uint8_t args[256] = {0};
+uint8_t get_line(uint8_t *line, uint16_t length)
+{
+  uint8_t line_length = 0;
+  uint8_t key;
+
+  microme_console_start();  
+
+  /*Get a line from the input sources */
+  while(true) {
+    if(microme_input_available()){
+      // BREAK KEY 
+      microme_read_input(&key);
+      if (key == 0x03) {
+        microme_console_end();
+        return 1;
+      }
+      //Line editing
+      if (key == KEY_BACKSPACE) {
+        if (line_length > 0) {
+          line_length--;
+          line[line_length] = 0;
+          microme_console_update(key);
+        }
+      }
+      else if (key != KEY_ENTER ) {
+        if (line_length < length - 1) {
+          line[line_length++] = key;
+          line[line_length] = 0; // push the line end ahead
+          microme_console_update(key);
+        }
+      }
+      else
+        break;
+    }
+  }
+  microme_console_end();
+
+  return(line_length);
+}
+
+static uint8_t line[INPUT_BUFFER_SIZE] = {0};
+static uint8_t args[INPUT_BUFFER_SIZE] = {0};
 
 static uint8_t microme_shell()
 {
-  uint8_t key;
   uint8_t line_length = 0;
   uint8_t i;
   uint8_t argc;
@@ -49,41 +88,14 @@ static uint8_t microme_shell()
   while (true) {
     line[0]=0;
     args[0]=0;
-    line_length = 0;
     i = 0;
     argc = 1;
-  
-    /*Get a line from the input sources */
-    microme_console_start();  
-    while(true) {
-      if(microme_input_available()){
-        // BREAK KEY 
-        microme_read_input(&key);
-        if (key == 0x03) {
-          microme_console_end();
-          return 1;
-        }
-        //Line editing
-        if (key == KEY_BACKSPACE) {
-          if (line_length > 0) {
-            line_length--;
-            line[line_length] = 0;
-            microme_console_update(key);
-          }
-        }
-        else if (key != KEY_ENTER ) {
-          if (line_length < sizeof(line) - 1) {
-            line[line_length++] = key;
-            line[line_length] = 0; // push the line end ahead
-            microme_console_update(key);
-          }
-        }
-        else
-          break;
-      }
-    }
-    microme_console_end();
-  
+
+    /* Read a line from the console */
+    microme_console_prompt();  
+    line_length = get_line(line, sizeof(line));
+
+    /* Empty line bailout */
     if (line_length == 0)
       continue;
   
@@ -183,6 +195,14 @@ static uint8_t microme_shell()
     }
     else if (strcmp(argv[0],"music") == 0) {
       music();
+      return(0);
+    }
+    else if (strcmp(argv[0],"load") == 0) {
+      microme_basic_load(argv[1]);
+      return(0);
+    }
+    else if (strcmp(argv[0],"save") == 0) {
+      microme_basic_save(argv[1]);
       return(0);
     }
 

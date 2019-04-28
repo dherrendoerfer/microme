@@ -21,12 +21,39 @@
 
 #ifdef TEENSY_MAIN
 
+#define DEBUG_PRINT(args ...) uvga.print(args)
+#define DEBUG_PRINTLN(args ...) uvga.println(args)
+
+#define TARGET_ARDUINO &Serial1
+#define TARGET_TEENSY2 &Serial2
+
 #endif
 
 #ifdef TEENSY_COPRO
+
+#define DEBUG_PRINT(args ...) Serial.print(args)
+#define DEBUG_PRINTLN(args ...) Serial.println(args)
+
+#define TARGET_TEENSY &Serial1
 
 #endif
 
 #ifdef ARDUINO_IO
 
+//#define DEBUG_PRINT(args ...) Serial.print(args)
+//#define DEBUG_PRINTLN(args ...) Serial.println(args)
+#define DEBUG_PRINT(args ...)
+#define DEBUG_PRINTLN(args ...)
+
+#define TARGET_TEENSY &Serial
+
 #endif
+
+/*Transfer Sizes*/
+#define MAX_FILE_CHUNK_SIZE 64
+#define FILE_TRANSFER_BUFFER (MAX_FILE_CHUNK_SIZE + 1)
+#define MAX_FILENAME_LENGTH 32
+
+/*File status flags */
+#define FILE_STATUS_OPEN   0x01
+#define FILE_STATUS_WRITE  0x02

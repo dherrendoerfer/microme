@@ -207,6 +207,10 @@ int uKbd_start(uint8_t datapin, uint8_t irqpin)
 
   attachInterrupt(digitalPinToInterrupt(uKbd_irqpin), uKBD_irq, FALLING);
 
+  // send reset
+  uKbd_send_byte(0xFF);
+  uKbd_send_byte(0xFA);
+  
   return 0;
 }
 

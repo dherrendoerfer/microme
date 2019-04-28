@@ -14277,10 +14277,10 @@ static uint8_t music()
   unsigned int i,m,pos=0;
   static char oldbuffer[26];
 
-  uvga.println(" Playing music: ");
+  microme_write_ioconsole(" Playing music: ");
 
   //LEDs decay-mode
-  sermsg_send_short(&Serial1, 2, 40, 1);
+  sermsg_send_short(TARGET_ARDUINO, 2, 40, 1);
 
   m = millis();
 
@@ -14291,23 +14291,26 @@ static uint8_t music()
     while (millis()-m < 20);
 
     m = millis();
-        
+ /*       
     for(i=0;i<25;i++) {
       if(Ghostbusters_dmp_start[pos+i] != oldbuffer[i]) {       
-        sermsg_send_short(&Serial2, 1, i, Ghostbusters_dmp_start[pos+i]);
+        sermsg_send_short(TARGET_TEENSY2, 1, i, Ghostbusters_dmp_start[pos+i]);
         if (i==3) {
-          sermsg_put_short(&Serial1, 2, 30, 128, 50);
+          sermsg_put_short(TARGET_ARDUINO, 2, 30, Ghostbusters_dmp_start[pos+i], 50);
         }
         else if (i==9) {
-          sermsg_put_short(&Serial1, 2, 32, 128, 50);
+          sermsg_put_short(TARGET_ARDUINO, 2, 32, Ghostbusters_dmp_start[pos+i], 50);
         }
         else if (i==15) {
-          sermsg_put_short(&Serial1, 2, 34, 128, 50);
+          sermsg_put_short(TARGET_ARDUINO, 2, 34, Ghostbusters_dmp_start[pos+i], 50);
         }
         oldbuffer[i] = Ghostbusters_dmp_start[pos+i];                  
       } 
     }
     pos+=25;
+    */
+    sermsg_send_var(TARGET_TEENSY2, 1, 0, 25, (uint8_t*)&Ghostbusters_dmp_start[pos]);
+    pos += 25;    
   }
 
   delay(1000);

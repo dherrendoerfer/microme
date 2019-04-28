@@ -18,6 +18,9 @@
  *
  ************************************************************************/
 
+#define TEENSY_MAIN 1
+#include <microME.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,12 +38,14 @@
 
 #include "musl.h"
 
-/*SERIAL BUS*/
-#include <sermsg.h>
+#define INPUT_BUFFER_SIZE 256
 
 /*VGA*/
 #include <uVGA.h>
 uVGA uvga;
+
+/*SERIAL BUS*/
+#include <sermsg.h>
 
 #define UVGA_DEFAULT_REZ
 #include <uVGA_valid_settings.h>
@@ -98,8 +103,9 @@ void setup()
   
   pinMode(13,OUTPUT); //LED
   pinMode(11,INPUT); // Arduino Input Event
-  //pinMode(12,INPUT); // Teensy2 Input Event
+  pinMode(12,INPUT); // Teensy2 Input Event
   setup_kbd(11);
+  setup_ioirq(12);
 }
 
 void loop() {
@@ -150,7 +156,39 @@ void loop() {
     uvga.print(minute()/10);
     uvga.println(minute()%10);
   }
-    
+
+/*
+delay (1000);
+  uint8_t buff[120];
+  sprintf((char*)buff, "file.bas");
+
+  uvga.println("Opening remote file file.bas");
+
+  open(0,"file.bas");
+  if ( stat(0) & FILE_STATUS_OPEN )
+    uvga.println("File is open");
+  else
+    uvga.println("File is closed");
+
+  uvga.print("Avail: ");
+  uvga.println(available(0));
+
+  while (available(0)) {
+    uint8_t len = read(0,buff,0,65);
+    for (int i=0; i< len; i++)
+      uvga.print((char)buff[i]);
+  }
+  uvga.println();
+
+  uvga.println("Closing remote file file.bas");
+  close(0);
+
+  if ( stat(0) & FILE_STATUS_OPEN )
+    uvga.println("File is open");
+  else
+    uvga.println("File is closed");
+*/
+  
   microme_basic_new();
   
   while (true) {

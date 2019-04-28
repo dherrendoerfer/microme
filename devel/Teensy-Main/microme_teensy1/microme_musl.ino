@@ -18,6 +18,7 @@
  *
  ************************************************************************/
 
+
 static void microme_musl_exec(char *line)
 {
   struct musl *m;
@@ -32,7 +33,16 @@ static void microme_musl_exec(char *line)
   mu_add_func(m, "pokea", my_pokea);
   mu_add_func(m, "pokeb", my_pokeb);
   mu_add_func(m, "settime", my_settime);
-  
+
+  mu_add_func(m, "random", my_rand);
+  mu_add_func(m, "drawline", my_drawline);
+  mu_add_func(m, "setcolor", my_setcolor);
+  mu_add_func(m, "setpos", my_setpos);
+
+  mu_add_func(m, "input$", my_input_s);
+  mu_add_func(m, "input", my_input);
+  mu_add_func(m, "get$", my_get_s);
+
   //cancel any outstanding BREAKs
   signal_break = 0;
 
@@ -78,7 +88,7 @@ static struct mu_par my_cls(struct musl *m, int argc, struct mu_par argv[]) {
   struct mu_par rv;
 
   uvga.clear();
-
+  uvga.moveCursor(0,0);
   return rv;
 }
 
@@ -94,12 +104,12 @@ static struct mu_par my_wait(struct musl *m, int argc, struct mu_par argv[]) {
 }
 
 /*@ ##pokea( dev, addr, val )
- *# Sends a signal to device B
+ *# Sends a byte to device A
  */
 static struct mu_par my_pokea(struct musl *m, int argc, struct mu_par argv[]) {
   struct mu_par rv;
 
-  sermsg_send_short(&Serial1, mu_par_int(m, 0, argc, argv), 
+  sermsg_send_short(TARGET_ARDUINO, mu_par_int(m, 0, argc, argv), 
                               mu_par_int(m, 1, argc, argv), 
                               mu_par_int(m, 2, argc, argv));
 
@@ -107,18 +117,17 @@ static struct mu_par my_pokea(struct musl *m, int argc, struct mu_par argv[]) {
 }
 
 /*@ ##pokeb( dev, addr, val )
- *# Sends a signal to device B
+ *# Sends a byte to device B
  */
 static struct mu_par my_pokeb(struct musl *m, int argc, struct mu_par argv[]) {
   struct mu_par rv;
 
-  sermsg_send_short(&Serial1, mu_par_int(m, 0, argc, argv), 
+  sermsg_send_short(TARGET_ARDUINO, mu_par_int(m, 0, argc, argv), 
                               mu_par_int(m, 1, argc, argv), 
                               mu_par_int(m, 2, argc, argv));
 
   return rv;
 }
-
 
 /*@ ##SETTIME([fmt])
  */
@@ -143,3 +152,153 @@ static struct mu_par my_settime(struct musl *m, int argc, struct mu_par argv[]) 
   return rv;
 }
 
+/*@ ##RANDOM() RANDOM(N) RANDOM(N,M)
+ *{
+ ** {{RANDOM()}} - Chooses a random number
+ ** {{RANDOM(N)}} - Chooses a random number in the range [1, N]
+ ** {{RANDOM(N,M)}} - Chooses a random number in the range [N, M]
+ *}
+ */
+  static struct mu_par my_rand(struct musl *m, int argc, struct mu_par argv[]) {
+  struct mu_par rv = {mu_int, {0}};
+  rv.v.i = rand();
+
+  if(argc == 1) {
+    int f = mu_par_int(m,0, argc, argv);
+    if(f <= 0) 
+      mu_throw(m, "Parameter to RANDOM(N) must be greater than 0");
+    rv.v.i = (rv.v.i % f) + 1;
+  } 
+  else if(argc == 2) {
+    int f = (mu_par_int(m,1, argc, argv) - mu_par_int(m,0, argc, argv) + 1);
+    if(f <= 0) 
+      mu_throw(m, "Parameters to RANDOM(N,M) must satisfy M-N+1 > 0");
+    rv.v.i = (rv.v.i % f) + mu_par_int(m,0, argc, argv);
+  }
+
+  return rv;
+}
+
+/*@ ##drawline( x1,y1, x2,y2, color)
+ *# draw a line
+ */
+static struct mu_par my_drawline(struct musl *m, int argc, struct mu_par argv[]) {
+  struct mu_par rv;
+
+  uvga.drawLine( mu_par_int(m, 0, argc, argv), 
+                 mu_par_int(m, 1, argc, argv), 
+                 mu_par_int(m, 2, argc, argv),
+                 mu_par_int(m, 3, argc, argv),
+                 mu_par_int(m, 4, argc, argv), 0);
+
+  return rv;
+}
+
+/*@ ##setcolor( back, front )
+ *# set colors
+ */
+static struct mu_par my_setcolor(struct musl *m, int argc, struct mu_par argv[]) {
+  struct mu_par rv;
+
+  uvga.setBackgroundColor(mu_par_int(m, 0, argc, argv));
+  uvga.setForegroundColor(mu_par_int(m, 1, argc, argv));
+
+  return rv;
+}
+
+/*@ ##setpos( line, col )
+ *# set cursor position
+ */
+static struct mu_par my_setpos(struct musl *m, int argc, struct mu_par argv[]) {
+  struct mu_par rv;
+
+  uvga.moveCursor( mu_par_int(m, 0, argc, argv),
+                   mu_par_int(m, 1, argc, argv));
+
+  return rv;
+}
+
+/*@ ##input$( prompt )
+ *# get an input line string
+ *# get an input number
+ */
+static struct mu_par my_input_s(struct musl *m, int argc, struct mu_par argv[]) {
+  struct mu_par rv;
+
+  uint16_t i;
+
+  if(argc == 0)
+    uvga.print("> ");
+  else {
+    uvga.print(mu_par_str(m, 0, argc, argv));
+    uvga.print(' ');
+  }
+
+  rv.type = mu_str;
+  rv.v.s = (char*)malloc(INPUT_BUFFER_SIZE + 1);
+  if(!rv.v.s) {
+    mu_throw(m, "Out of memory");
+  }
+
+  rv.v.s[0] = '\0';
+  if(get_line((uint8_t*)rv.v.s, INPUT_BUFFER_SIZE)) {
+    for(i=0; i<INPUT_BUFFER_SIZE; i++) {
+      if(rv.v.s[i] == '\n'){
+        rv.v.s[i] = 0;
+        break;
+      }
+    }
+  }
+  if(argc > 1) {
+    const char * name = mu_par_str(m, 1, argc, argv);
+    mu_set_str(m, name, rv.v.s);
+  }
+      
+  return rv;
+}
+
+static struct mu_par my_input(struct musl *m, int argc, struct mu_par argv[]) {
+  struct mu_par rv;
+  uint8_t buffer[50];
+
+  if(argc == 0)
+    uvga.print("> ");
+  else {
+    uvga.print(mu_par_str(m, 0, argc, argv));
+    uvga.print(' ');
+  }
+
+  rv.type = mu_int;
+  rv.v.i = 0;
+  if(get_line(buffer, sizeof buffer - 1))
+    rv.v.i = atoi((char*)buffer);
+  
+  if(argc > 1) {
+    const char * name = mu_par_str(m, 1, argc, argv);
+    mu_set_int(m, name, rv.v.i);
+  }
+      
+  return rv;
+}
+
+/*@ ##get$()
+ *# get a key char
+ */
+static struct mu_par my_get_s(struct musl *m, int argc, struct mu_par argv[]) {
+  struct mu_par rv;
+
+  rv.type = mu_str;
+  rv.v.s = (char*)malloc(2);
+  if(!rv.v.s) {
+    mu_throw(m, "Out of memory");
+  }
+
+  rv.v.s[0] = 0;
+  rv.v.s[1] = 0;
+
+  if(microme_input_available()){
+    microme_read_input((uint8_t*)&rv.v.s[0]);
+  }
+      
+  return rv;
+}

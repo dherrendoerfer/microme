@@ -25,27 +25,25 @@
 static const char *prompt = ">";
 static const char *cursor = "_";
 
-uint8_t microme_console_start()
+void microme_console_prompt()
 {
-  uvga.print(prompt);  
-  uvga.print(cursor);  
-
-  return(0);
+  uvga.print(prompt);    
 }
 
-uint8_t microme_console_update(uint8_t atom)
+void microme_console_start()
+{
+  uvga.print(cursor);
+}
+
+void microme_console_update(uint8_t atom)
 {
   uvga.print("\b");
   uvga.print((char)atom);  
   uvga.print(cursor);  
-
-  return(0);
 }
 
-uint8_t microme_console_end()
+void microme_console_end()
 {
   uvga.print("\b");
   uvga.println();  
-
-  return(0);
 }

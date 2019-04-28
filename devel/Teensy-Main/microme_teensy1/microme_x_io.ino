@@ -27,14 +27,14 @@ static uint8_t microme_input_available()
   uvga.waitSync();
 
   if (digitalRead(12) == HIGH) {
-    if (!sermsg_get_short(&Serial2, 2, 2, &avail)) {
+    if (!sermsg_get_short(TARGET_TEENSY2, 2, 2, &avail)) {
       return avail;
     }
   }
 
 /*
   if (digitalRead(11) == HIGH) {
-    if (!sermsg_get_short(&Serial1, 1, 2, &avail)) {
+    if (!sermsg_get_short(TARGET_ARDUINO, 1, 2, &avail)) {
       return avail;
     }
   }
@@ -46,14 +46,14 @@ static uint8_t microme_input_available()
 static uint8_t microme_read_input(uint8_t *data)
 {
   if (digitalRead(12) == HIGH) {
-    if (!sermsg_get_short(&Serial2, 2, 1, data)) {
+    if (!sermsg_get_short(TARGET_TEENSY2, 2, 1, data)) {
       return 0;
     }
   }
 
 /*
   if (digitalRead(11) == HIGH) {
-    if (!sermsg_get_short(&Serial1, 1, 1, data)) {
+    if (!sermsg_get_short(TARGET_ARDUINO, 1, 1, data)) {
       return 0;
     }
   }
@@ -68,7 +68,7 @@ static uint8_t microme_read_input(uint8_t *data)
 static uint8_t microme_write_ioconsole(char* data, uint8_t length)
 {
   int i;
-  sermsg_send_var(&Serial2, 2, 1, length, (uint8_t*)data);
+  sermsg_send_var(TARGET_TEENSY2, 2, 1, length, (uint8_t*)data);
 
   for (i=0; i<length; i++) {
     uvga.print((char)data[i]);
@@ -81,7 +81,7 @@ static uint8_t microme_write_ioconsole(char* data)
   uvga.println((char*)data);
   uvga.waitSync();
   
-  sermsg_send_var(&Serial2, 2, 1, strlen(data), (uint8_t*)data);
-  sermsg_send_var(&Serial2, 2, 1, 1, (uint8_t*)"\n");
+  sermsg_send_var(TARGET_TEENSY2, 2, 1, strlen(data), (uint8_t*)data);
+  sermsg_send_var(TARGET_TEENSY2, 2, 1, 1, (uint8_t*)"\n");
   return 0;
 }

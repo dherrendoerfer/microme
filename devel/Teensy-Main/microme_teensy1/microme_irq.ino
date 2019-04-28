@@ -18,13 +18,51 @@
  *
  ************************************************************************/
 
+static void io_irq()
+{ 
+  static uint8_t key = 0;
+  static uint8_t io_stats = 0;
+
+  flush_in(TARGET_TEENSY2);
+
+  // IO-irq will only get the state, then the contents one by one
+  if (sermsg_get_short(TARGET_TEENSY2, 0, 1, &io_stats)) {
+    return;
+  }
+
+  if (!io_stats)
+    return;
+    
+  // Remote debug keyboard input
+  if (io_stats & 0x01) {
+    if (sermsg_get_short(TARGET_TEENSY2, 2, 1, &key)) {
+      // ignore
+    } else {
+      kbd_buffer[kbd_buff_ceil++] = key;
+      kbd_buff_ceil &= 0x1F;
+    }
+  }
+return;
+  // SD card file input (file-stream)
+  if (io_stats & 0x02) {
+    if (sermsg_get_short(TARGET_TEENSY2, 3, 1, &key)) {
+      // ignore
+    }
+  } else if (io_stats & 0x04) {
+    // END of file stream
+    if (sermsg_get_short(TARGET_TEENSY2, 3, 1, &key)) {
+      // ignore
+    }
+  }
+}
+
 static void kbd_irq()
 { 
   static uint8_t key = 0;
-
-  flush_in(&Serial1);
   
-  if (sermsg_get_short(&Serial1, 1, 1, &key)) {
+  flush_in(TARGET_ARDUINO);
+
+  if (sermsg_get_short(TARGET_ARDUINO, 1, 1, &key)) {
     return;
   }
 
@@ -63,4 +101,10 @@ static void setup_kbd(uint8_t kbd_irqpin)
   attachInterrupt(digitalPinToInterrupt(kbd_irqpin), kbd_irq, RISING);
 }
 
+static void setup_ioirq(uint8_t io_irqpin)
+{
+  pinMode(io_irqpin, INPUT);
+
+  attachInterrupt(digitalPinToInterrupt(io_irqpin), io_irq, RISING);
+}
 

@@ -17,88 +17,40 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  ************************************************************************/
- /*
-Sermsg format:
 
+#include <sermsg_COBS.h>
 
-Short Query
-BYTE 0: MESAGE TARGET&TYPE
-BYTE 1: MESSAGE TARGET ADDRESS
-BYTE 3: CHKSUM
+// little helpers
+#define SERMSG_MSGTYPE (recvbuffer[0] & 0xF0)
+#define SERMSG_TARGET  (recvbuffer[0] & 0x0F)
 
-RESPONSE: OK/NOK, ADDRESS, DATA, CHKSUM
+#define SERMSG_ADDRESS recvbuffer[1]
+#define SERMSG_DATA  recvbuffer[2]
 
-Long Query
-BYTE 0: MESAGE TARGET&TYPE
-BYTE 1: MESSAGE TARGET ADDRESS
-BYTE 2: MESSAGE LENGTH
-BYTE 3: MESSAGE LENGTH
-BYTE 4: MESSAGE LENGTH
-BYTE 5: MESSAGE LENGTH
-BYTE 3: CHKSUM
+#define SERMSG_CSUM  recvbuffer[3]
 
-RESPONSE: OK, TRANSMISSION ID, CHKSUM
+#define SERMSG_VAR_LENGTH recvbuffer[2]
+#define SERMSG_VAR_MESSAGE(I) recvbuffer[I+3]
 
-
-Short Message
-BYTE 0: MESAGE TARGET&TYPE
-BYTE 1: MESSAGE TARGET ADDRESS
-BYTE 2: MESSAGE DATA
-BYTE 3: CHKSUM
-
-RESPONSE: OK/NOK
-
-Medium Message
-BYTE 0: MESAGE TARGET&TYPE
-BYTE 1: MESSAGE DATA
-BYTE 2: MESSAGE DATA
-BYTE 3: MESSAGE DATA
-BYTE 4: MESSAGE DATA
-BYTE 5: MESSAGE DATA
-BYTE 6: MESSAGE DATA
-BYTE 7: CHKSUM
-
-RESPONSE: OK/NOK
-
-Long Message
-BYTE 0: MESAGE TARGET&TYPE
-BYTE 1: MESSAGE TARGET ADDRESS
-BYTE 2: MESSAGE LENGTH
-BYTE 3: MESSAGE LENGTH
-BYTE 4: MESSAGE LENGTH
-BYTE 5: MESSAGE LENGTH
-BYTE 6: CHKSUM
-
-RESPONSE: OK/NOK, TRANSMISSION ID, CHKSUM
-
-
-DATA BLOCKs:
-
-Then :
-BYTE 0: TRANSMISSION ID
-BYTE 1: BLOCK NUMBER
-BYTE 0-N: DATA
-BYTE N+1: CHKSUM
-for up to 512 bytes
-
-RESPONSE: OK/NOK, BLOCK NR, CHKSUM
-
-
-*/
-
+// Supported commands
 #define SERMSG_SEND_SHORT 0x10
-#define SERMSG_SEND_MED   0x20
-#define SERMSG_SEND_LONG  0x30
-#define SERMSG_GET_SHORT  0x40
-#define SERMSG_GET_LONG   0x50
-#define SERMSG_BLOCK      0x60
-#define SERMSG_PUT_SHORT  0x70
-#define SERMSG_SEND_VAR   0x80
+#define SERMSG_GET_SHORT  0x20
+#define SERMSG_PUT_SHORT  0x30
+#define SERMSG_SEND_VAR   0x40
+#define SERMSG_GET_VAR    0x50
 
+// Variables
 volatile uint8_t sermsg_busy;
 
-static uint8_t msgbuffer[260];
-static uint8_t msgevent = 0;
+// Receive buffer
+static volatile uint8_t recvbuffer[132];
+static volatile uint8_t recv_count = 0;
+
+// Send buffer
+static volatile uint8_t databuffer[132];
+static volatile uint8_t *msgbuffer = &databuffer[4];
+
+static volatile uint8_t msgevent = 0;
 
 static void flush_in(HardwareSerial *serialport)
 {
@@ -107,21 +59,47 @@ static void flush_in(HardwareSerial *serialport)
     tmp = serialport->read();
 }
 
-static int sermsg_waitread(HardwareSerial *serialport, uint8_t *buffer, uint8_t pos, uint8_t len)
+static int sermsg_recv_reply(HardwareSerial *serialport, uint8_t length)
 {
   uint16_t timeout;
+  uint8_t pos = 0;
+  uint8_t tmp = 0;
+  uint8_t len = length;
+
+  len=len+2;  //Add expected overhead for COBS packet and packet end (0)
+
   while (len) {
-    timeout=100;
-    while (serialport->available() == 0 && timeout-- ) {
+    timeout=300;
+    while (timeout && (serialport->available() < 1)) {
       delay(1);
+      timeout--;
     }
     if (!timeout) {
-      return 1;
+      DEBUG_PRINTLN("RCVRPL: TIMEOUT !!");
+      DEBUG_PRINT("RCVRPL: POS: ");
+      DEBUG_PRINTLN((int)pos);
+      DEBUG_PRINTLN((int)recvbuffer[pos-1]);
+
+      return(0);
     }
-    buffer[pos++]=serialport->read();
+
+    tmp = serialport->read();
+//    uvga.print((char)tmp);
+//    uvga.print(" ");
+
+    if (tmp == 0) {
+      if (len == 1) {
+        return(COBS_decode128(recvbuffer, length + 1));
+      }
+    }
+    else {
+      recvbuffer[pos++]=tmp;
+    }
     len--;
   }
-  return 0;
+
+  DEBUG_PRINTLN("RCVRPL: FRAME?");
+  return(0);
 }
 
 static void sermsg_init()
@@ -129,266 +107,406 @@ static void sermsg_init()
 
 }
 
-static void sermsg_loop(HardwareSerial *serialport)
-{
-  uint8_t count=0;
-  uint8_t CSUM=0;
-  uint8_t datagram=0;
-  uint8_t type = 0;
-  uint8_t length = 0;
-  uint8_t i;
+/* The sermsg server loop holds the implementation to every
+ * request implemented below. Each pass of the loop should
+ * not handle more that one mesage frame, so it does not
+ * block other functions of the controller
+ */
 
-  if (serialport->available() > 0){
-    msgbuffer[count++]=serialport->read();
-  }
-  else
-  {
+static void sermsg_readpkt(uint8_t length)
+{
+  uint8_t CSUM = 0;
+  uint8_t i, expect_len, type;
+
+  for (i = 0; i < length - 1; i++)
+    CSUM += recvbuffer[i];
+
+  if (recvbuffer[i] != CSUM ) {
+    DEBUG_PRINTLN("READPKT: CSUM MISMATCH !!");
+    DEBUG_PRINT("CALCULATED: ");
+    DEBUG_PRINTLN((int)CSUM);
+    DEBUG_PRINT("EXPECTED: ");
+    DEBUG_PRINTLN((int)recvbuffer[i-1]);
+    DEBUG_PRINT("PACKET LENGTH: ");
+    DEBUG_PRINTLN((int)length);
+    for (i = 0; i < length ; i++) {
+      DEBUG_PRINT((int)recvbuffer[i]);
+      DEBUG_PRINT(",");
+    }
+    DEBUG_PRINTLN();
     return;
   }
 
-  type=msgbuffer[0] & 0xF0;
+  type = SERMSG_MSGTYPE;
 
-  switch (type)
-  {
+  switch(type) {
   case SERMSG_GET_SHORT:
-    if (sermsg_waitread(serialport,msgbuffer,count,2))
-      goto timeout;
-    count=2;
+    expect_len = 3;
     break;
   case SERMSG_SEND_SHORT:
-    if (sermsg_waitread(serialport,msgbuffer,count,3))
-      goto timeout;
-    count=3;
+    expect_len = 4;
     break;
   case SERMSG_PUT_SHORT:
-    if (sermsg_waitread(serialport,msgbuffer,count,3))
-      goto flush;
-      datagram=1;
-      count=3;
+    expect_len = 4;
     break;
-    case SERMSG_SEND_VAR:
-      if (sermsg_waitread(serialport,msgbuffer,count,3))
-        goto timeout;
-      count=3;
-      break;
+  case SERMSG_SEND_VAR:
+    expect_len = 0;
+    break;
+  case SERMSG_GET_VAR:
+    expect_len = 4;
+    break;
   default:
     return;
   }
 
-  /*Checksum*/
-  for (i=0; i<count; i++)
-    CSUM =+ msgbuffer[i];
-
-  // Message without confirmation, quick exit
-  if (datagram) {
-    if (msgbuffer[count] == CSUM) {
+  if ( expect_len ) {
+    if ( expect_len == length)
       msgevent = 1;
-      return;
-    }
-    else {
-      return;
-    }
-  }
-
-  if (msgbuffer[count] != CSUM){
-    serialport->write('-'); /*error*/
-    return;
   }
   else {
-    serialport->write('+'); /*ok*/
+    if ( 4 < length)
+      msgevent = 1;
   }
 
-  // Messages with a data segment
-  switch (type)
-  {
-  case SERMSG_SEND_VAR:
-    length=msgbuffer[2];
-
-    if (sermsg_waitread(serialport,msgbuffer, 3 ,length+1))
-      goto timeout;
-      /*Inner Checksum*/
-      CSUM=0;
-      for (i=0; i<length; i++)
-        CSUM =+ msgbuffer[i+3];
-
-      if (msgbuffer[length+4] != CSUM){
-        serialport->write('-'); /*error*/
-        return;
-      }
-      else {
-        serialport->write('+'); /*ok*/
-        msgevent = 1;
-        return;
-      }
-      break;
-  default:
-        msgevent=1;
-        return;
-  }
-
-
-timeout:
-  serialport->write('T'); /*Timeout*/
-flush:
-  flush_in(serialport);
   return;
 }
 
+
+static void sermsg_loop(HardwareSerial *serialport)
+{
+  uint8_t data = 0;
+
+  if (serialport->available() > 0) {
+    data = serialport->read();
+    recvbuffer[recv_count++] = data;
+  }
+  else {
+    return;
+  }
+
+  if (data == 0){
+    uint8_t length;
+    length = COBS_decode128(recvbuffer, recv_count-1);
+    recv_count = 0;
+
+    if (length)
+      sermsg_readpkt(length);
+  }
+}
+
+
+static void sermsg_send_confirm(HardwareSerial *serialport, uint8_t status)
+{
+  int transmit_length;
+  if (status)
+    msgbuffer[0] = '+';
+  else
+    msgbuffer[0] = '-';
+
+  transmit_length = COBS_encode128(databuffer,1);
+  databuffer[transmit_length++] = 0;
+
+  serialport->write((char*)databuffer,transmit_length);
+}
+
+
+/* Send one byte, wait for the confirmation
+ *
+  Short set
+  BYTE 0: MESAGE TYPE and TARGET
+  BYTE 1: MESSAGE TARGET ADDRESS
+  BYTE 2: MESSGAGE DATA
+  BYTE 3: CHKSUM
+ * */
 static int sermsg_send_short(HardwareSerial *serialport, uint8_t target, uint8_t address, uint8_t data)
 {
-  uint8_t buffer[8];
-  uint8_t i;
+//  uint8_t buffer[8];
+  uint8_t tmp;
 
-  buffer[0]=SERMSG_SEND_SHORT + target;
-  buffer[1]=address;
-  buffer[2]=data;
+  msgbuffer[0]=SERMSG_SEND_SHORT + target;
+  msgbuffer[1]=address;
+  msgbuffer[2]=data;
 
-  for (i=0; i<3; i++)
-    buffer[3] =+ buffer[i];
+  // CSUM ( dont need a for loop here )
+  msgbuffer[3]=msgbuffer[0]+msgbuffer[1]+msgbuffer[2];
 
-  serialport->write(buffer,4);
+  tmp=COBS_encode128(databuffer,4);
+  databuffer[tmp++] = 0; //EOM
+
+  serialport->write((char*)databuffer,tmp);
 
   /*Get a response*/
+  //sermsg_waitread(serialport, buffer, 0, 1);
+  sermsg_recv_reply(serialport, 1); // Want 1 byte return code
 
-  sermsg_waitread(serialport, buffer, 0, 1);
-
-  if (buffer[0] == '+') {
+  if (recvbuffer[0] == '+') {
     digitalWrite(13,LOW);
-    return 0;
+    return(0);
   }
 
   digitalWrite(13,HIGH);
-  return 1;
+  return(1);
 }
 
+/* Request one byte, send the confirmation
+ *
+  Short Query
+  BYTE 0: MESAGE TYPE and TARGET
+  BYTE 1: MESSAGE TARGET ADDRESS
+  BYTE 2: CHKSUM
+ * */
 static int sermsg_get_short(HardwareSerial *serialport, uint8_t target, uint8_t address, uint8_t *data)
 {
-  uint8_t buffer[8];
   uint8_t CSUM = 0;
-  uint8_t i;
+  uint8_t tmp;
 
-  buffer[0]=SERMSG_GET_SHORT + target;
-  buffer[1]=address;
+  msgbuffer[0]=SERMSG_GET_SHORT + target;
+  msgbuffer[1]=address;
 
-  for (i=0; i<2; i++)
-    buffer[2] =+ buffer[i];
+  // CSUM ( dont need a for loop here )
+  msgbuffer[2]=msgbuffer[0]+msgbuffer[1];
 
-  serialport->write(buffer,3);
+  tmp=COBS_encode128(databuffer,3);
+  databuffer[tmp++] = 0; //EOM
+
+  serialport->write((char*)databuffer,tmp);
 
   /*Get a response*/
+  sermsg_recv_reply(serialport, 3); // Want 3 byte return code
 
-  sermsg_waitread(serialport, buffer, 0, 1);
+  CSUM = recvbuffer[0]+recvbuffer[1];
 
-  if (buffer[0] != '+') {
-    digitalWrite(13,HIGH);
-    return 1;
+  if (CSUM != recvbuffer[2]) {
+    DEBUG_PRINTLN("GETSHORT: CSUM MISMATCH !!");
+    DEBUG_PRINT("CALCULATED: ");
+    DEBUG_PRINTLN((int)CSUM);
+    DEBUG_PRINT("EXPECTED: ");
+    DEBUG_PRINTLN((int)recvbuffer[2]);
+    for (int i = 0; i < 3 ; i++) {
+      DEBUG_PRINT((int)recvbuffer[i]);
+      DEBUG_PRINT(",");
+    }
+    DEBUG_PRINTLN();
+    return(1);
   }
 
-  sermsg_waitread(serialport, buffer, 0, 3);
-
-  /*Checksum*/
-  for (i=0; i<2; i++)
-    CSUM =+ buffer[i];
-
-  if ( buffer[0] == address && buffer[2] == CSUM) {
-    serialport->write('+');
-    *data=buffer[2];
+  if ( recvbuffer[0] == address ) {
+    sermsg_send_confirm(serialport, 1);
+    *data=recvbuffer[1];
     digitalWrite(13,LOW);
-    return 0;
+    return(0);
   }
 
-  serialport->write('-');
+  sermsg_send_confirm(serialport, 0);
   digitalWrite(13,HIGH);
-  return 1;
+  return(1);
 }
 
+/* Send the reply to a 'short_get' request
+ *
+ Short get reply
+ BYTE 0: ADDRESS
+ BYTE 1: Requested DATA
+ BYTE 2: CHKSUM
+ * */
 static int sermsg_send_get_reply(HardwareSerial *serialport, uint8_t address, uint8_t data)
 {
-  uint8_t buffer[8];
-  uint8_t i;
+  uint8_t tmp;
 
-  buffer[0]=address;
-  buffer[1]=data;
+  msgbuffer[0]=address;
+  msgbuffer[1]=data;
 
-  for (i=0; i<2; i++)
-    buffer[2] =+ buffer[i];
+  // CSUM ( dont need a for loop here )
+  msgbuffer[2]=msgbuffer[0]+msgbuffer[1];
 
-  serialport->write(buffer,3);
+  tmp=COBS_encode128(databuffer,3);
+  databuffer[tmp++] = 0; //EOM
 
-  sermsg_waitread(serialport, buffer, 0, 1);
+  serialport->write((char*)databuffer,tmp);
 
-  if (buffer[0] != '+') {
-    digitalWrite(13,HIGH);
-    return 1;
+  sermsg_recv_reply(serialport, 1); // Want 1 byte return code
+
+  if (recvbuffer[0] == '+') {
+    digitalWrite(13,LOW);
+    return(0);
   }
 
-  return 0;
+  digitalWrite(13,HIGH);
+  return(1);
 }
 
 unsigned long last_put_millis = 0;
 
+/* Send a byte, dont wait for a confirmation (or expect one)
+ *
+  Short put
+  BYTE 0: MESAGE TYPE and TARGET
+  BYTE 1: MESSAGE TARGET ADDRESS
+  BYTE 2: MESSGAGE DATA
+  BYTE 3: CHKSUM
+ * */
 static int sermsg_put_short(HardwareSerial *serialport, uint8_t target, uint8_t address, uint8_t data, uint8_t holdoff_time)
 {
-  uint8_t buffer[8];
-  uint8_t i;
+  uint8_t tmp;
 
-  /* We can't hammer the receiver*/
+  /* We don't want to cause too much load on the receiver */
   if ((long)millis()-(long)last_put_millis < holdoff_time)
-    return 5;
-
+    return(5);
   last_put_millis = millis();
 
-  buffer[0]=SERMSG_PUT_SHORT + target;
-  buffer[1]=address;
-  buffer[2]=data;
+  msgbuffer[0]=SERMSG_PUT_SHORT + target;
+  msgbuffer[1]=address;
+  msgbuffer[2]=data;
 
-  for (i=0; i<3; i++)
-    buffer[3] =+ buffer[i];
+  // CSUM ( dont need a for loop here )
+  msgbuffer[3]=msgbuffer[0]+msgbuffer[1]+msgbuffer[2];
 
-  serialport->write(buffer,4);
+  tmp=COBS_encode128(databuffer,4);
+  databuffer[tmp++] = 0; //EOM
 
-  return 0;
+  serialport->write((char*)databuffer,tmp);
+
+  return(0);
 }
 
+/* Send a number of bytes (up to 120) and wait for confirmation
+ *
+  Variable length send
+  BYTE 0: MESAGE TYPE and TARGET
+  BYTE 1: MESSAGE TARGET ADDRESS
+  BYTE 2: MESSGAGE LENGTH
+  BYTE 3 - N: MESSAGE DATA
+  BYTE N+1: CHKSUM
+ * */
 static int sermsg_send_var(HardwareSerial *serialport, uint8_t target, uint8_t address, uint8_t length, uint8_t *data)
 {
-  uint8_t buffer[258];
-  uint8_t i;
-  uint8_t CSUM = 0;
+  uint8_t i,tmp, CSUM;
 
-  buffer[0]=SERMSG_SEND_VAR + target;
-  buffer[1]=address;
-  buffer[2]=length;
+  msgbuffer[0]=SERMSG_SEND_VAR + target;
+  msgbuffer[1]=address;
+  msgbuffer[2]=length;
 
-  for (i=0; i<3; i++)
-    buffer[3] =+ buffer[i];
+  // CSUM ( dont need a for loop here )
+  CSUM = msgbuffer[0]+msgbuffer[1]+msgbuffer[2];
 
-  serialport->write(buffer,4);
+  for(i=0; i < length; i++) {
+    CSUM += data[i];
+    msgbuffer[i+3] = data[i];
+  }
+  msgbuffer[i+3] = CSUM;
 
-  /*Get a response*/
-  sermsg_waitread(serialport, buffer, 0, 1);
+  tmp=COBS_encode128(databuffer,i+4);
+  databuffer[tmp++] = 0; //EOM
 
-  if (buffer[0] != '+') {
-    digitalWrite(13,HIGH);
-    return 1;
+  serialport->write((char*)databuffer,tmp);
+
+  sermsg_recv_reply(serialport, 1); // Want 1 byte return code
+
+  if (recvbuffer[0] == '+') {
+    digitalWrite(13,LOW);
+    return(0);
   }
 
-  /*Checksum*/
+  digitalWrite(13,HIGH);
+  return(1);
+}
+
+/* Request a number of bytes (up to 120) and wait for confirmation
+ *
+  Variable length request
+  BYTE 0: MESAGE TYPE and TARGET
+  BYTE 1: MESSAGE TARGET ADDRESS
+  BYTE 2: REQUESTED LENGTH
+  BYTE 3: CHKSUM
+ * */
+static int sermsg_read_var(HardwareSerial *serialport, uint8_t target, uint8_t address, uint8_t length, uint8_t *data)
+{
+  uint8_t i,tmp, CSUM;
+  uint16_t wait;
+
+  msgbuffer[0]=SERMSG_GET_VAR + target;
+  msgbuffer[1]=address;
+  msgbuffer[2]=length;
+
+  // CSUM ( dont need a for loop here )
+  msgbuffer[3] = msgbuffer[0]+msgbuffer[1]+msgbuffer[2];
+
+  tmp = COBS_encode128(databuffer,4);
+  databuffer[tmp++] = 0; //EOM
+
+  serialport->write((char*)databuffer,tmp);
+
+  wait = 500;
+  while ( wait && serialport->available() < 1) {
+    wait--;
+    delay(1);
+  }
+
+  tmp = sermsg_recv_reply(serialport, length + 2 ); // Want length + 2 byte return code
+
+  // Check the data
   CSUM = 0;
-  for (i=0; i<length; i++)
-    CSUM =+ data[i];
+  for (i = 0; i < tmp - 1; i++)
+    CSUM += recvbuffer[i];
 
-  serialport->write(data, length);
-  serialport->write(CSUM);
-
-  /*Get a response*/
-  sermsg_waitread(serialport, buffer, 0, 1);
-
-  if (buffer[0] != '+') {
-    digitalWrite(13,HIGH);
-    return 1;
+  if (recvbuffer[i] != CSUM ) {
+    DEBUG_PRINTLN("CSUM!");
+    return(1);
   }
 
-  digitalWrite(13,LOW);
-  return 0;
+  if ( recvbuffer[0] == address ) {
+    // Copy the data
+    memcpy(&data[0], (void*)&recvbuffer[1], length);
+    sermsg_send_confirm(serialport, 1);
+    digitalWrite(13,LOW);
+    return(0);
+  }
+
+  sermsg_send_confirm(serialport, 0);
+  digitalWrite(13,HIGH);
+  return(1);
+}
+
+/* Send the reply to a 'short_get' request
+ *
+ Short get reply
+ BYTE 0: ADDRESS
+ BYTE 1-N: Requested DATA
+ BYTE N+1: CHKSUM
+ * */
+static int sermsg_send_var_get_reply(HardwareSerial *serialport, uint8_t address, uint8_t length, uint8_t* data)
+{
+  uint8_t i,tmp,CSUM;
+  uint16_t wait;
+
+  msgbuffer[0]=address;
+  CSUM = address;
+
+  // Copy the data & make CSUM
+  for (i = 0; i < length; i++) {
+    msgbuffer[i+1] = data[i];
+    CSUM += data[i];
+  }
+  msgbuffer[i+1] = CSUM;
+
+  tmp=COBS_encode128(databuffer,length+2);
+  databuffer[tmp++] = 0; //EOM
+
+  tmp = serialport->write((char*)databuffer,tmp);
+
+  wait = 500;
+  while ( wait && serialport->available() < 1) {
+    wait--;
+    delay(1);
+  }
+
+  sermsg_recv_reply(serialport, 1); // Want 1 byte return code
+
+  if (recvbuffer[0] == '+') {
+    digitalWrite(13,LOW);
+    return(0);
+  }
+
+  digitalWrite(13,HIGH);
+  return(1);
 }

@@ -27,6 +27,9 @@ uint8_t buff_floor=0;
 uint8_t buff_ceil=0;
 
 int status = 0;
+
+#define ARDUINO_IO 1
+#include <microME.h>
 #include <sermsg.h>
 
 /* The local settings page */
@@ -46,18 +49,23 @@ void setup()
 
 void msg()
 {
-  if (msgbuffer[1] == 13)
-    digitalWrite(13,msgbuffer[2]);
-  else
-    settings[msgbuffer[1]]=msgbuffer[2];
+  uint8_t type=SERMSG_MSGTYPE;
+  
+  if (type == SERMSG_SEND_SHORT) {
+    if (SERMSG_ADDRESS == 13)
+      digitalWrite(13,SERMSG_DATA);
+    else
+      settings[SERMSG_ADDRESS]=SERMSG_DATA;
+    sermsg_send_confirm(TARGET_TEENSY, 1);
+  }
 }
 
 void loop() 
 {
-  sermsg_loop(&Serial);
+  sermsg_loop(TARGET_TEENSY);
 
   if (msgevent) {
-    switch (msgbuffer[0]&0x0F)
+    switch (SERMSG_TARGET)
     {
       case 0:
         msg();
