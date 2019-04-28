@@ -27,13 +27,23 @@ void sid_init()
 
 void sid_msg()
 {
-  uint8_t type=msgbuffer[0] & 0xF0;
+  uint8_t type=SERMSG_MSGTYPE;
 
   if (type == SERMSG_SEND_SHORT){
-    if (msgbuffer[1] < 30) {
-      playSID.setreg(msgbuffer[1], msgbuffer[2]);
+    if (SERMSG_ADDRESS < 30) {
+      playSID.setreg(SERMSG_ADDRESS, SERMSG_DATA);
+      sermsg_send_confirm(TARGET_TEENSY, 1);
     }
   }
+  else if (type == SERMSG_SEND_VAR){
+    if (SERMSG_ADDRESS == 0 && SERMSG_VAR_LENGTH < 30) {
+      for (uint8_t i=0; i<SERMSG_VAR_LENGTH; i++) {
+        playSID.setreg(i, SERMSG_VAR_MESSAGE(i));
+      }
+      sermsg_send_confirm(TARGET_TEENSY, 1);
+    }
+  }
+
 }
 
 void sid_loop()

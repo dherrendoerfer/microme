@@ -18,8 +18,14 @@
  *
  ************************************************************************/
 
+#define TEENSY_COPRO 1
+#include <microME.h>
+
 #include <Audio.h>
 #include <reSID.h>
+
+#include <SD.h>
+#include <SPI.h>
 
 // GUItool: begin automatically generated code
 AudioPlaySID       playSID;  
@@ -27,13 +33,13 @@ AudioOutputAnalog  dac1;
 AudioConnection    patchCord1(playSID, dac1);
 // GUItool: end automatically generated code
 
-
-int status = 0;
 #include <sermsg.h>
 
 /* The local settings page */
 uint8_t settings[10];
 uint8_t *mode = &settings[0];
+
+uint8_t io_status = 0;
 
 void setup() {
   // wait for Arduino Serial Monitor
@@ -48,21 +54,36 @@ void setup() {
   sermsg_init();
   sid_init();
   log_init();
+  sdcard_init();
 }
 
 void msg()
 {
-  if (msgbuffer[1] == 13)
-    digitalWrite(13,msgbuffer[2]);
-  else
-    settings[msgbuffer[1]]=msgbuffer[2];
+//  Serial.println((int)SERMSG_MSGTYPE);
+//  Serial.println((int)SERMSG_ADDRESS);
+//  Serial.println((int)SERMSG_DATA);
+
+  uint8_t type = SERMSG_MSGTYPE;
+  
+  if (type == SERMSG_GET_SHORT) {
+    if (SERMSG_ADDRESS == 1) {
+      digitalWrite(2,LOW);
+      sermsg_send_get_reply(TARGET_TEENSY, 1, io_status);
+    }
+  }
+  else if (SERMSG_MSGTYPE == SERMSG_SEND_SHORT) {
+    if (SERMSG_ADDRESS == 13)
+      digitalWrite(13,SERMSG_DATA);
+    else
+      settings[SERMSG_ADDRESS] = SERMSG_DATA;
+  }
 }
 
 void loop() {
-  sermsg_loop(&Serial1);
+  sermsg_loop(TARGET_TEENSY);
 
   if (msgevent) {
-    switch (msgbuffer[0]&0x0F)
+    switch (SERMSG_TARGET)
     {
       case 0:
         msg();
@@ -73,6 +94,12 @@ void loop() {
       case 2:
         log_msg();
         break;
+      case 3:
+        sdcard_msg();
+        break;
+      case 4:
+        sdcard_file(0); // File IO for file 0
+        break;
     }
     msgevent = 0;
     return;
@@ -80,4 +107,5 @@ void loop() {
 
   sid_loop();
   log_loop();
+  sdcard_loop();
 }

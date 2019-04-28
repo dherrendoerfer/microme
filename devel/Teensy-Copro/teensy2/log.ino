@@ -35,24 +35,26 @@ void log_init()
 
 void log_msg()
 {
-  uint8_t type=msgbuffer[0] & 0xF0;
+  uint8_t type = SERMSG_MSGTYPE;
 
   if (type == SERMSG_SEND_VAR){
-    if (msgbuffer[1] == 1) {
-      uint8_t length=msgbuffer[2];
+    if (SERMSG_ADDRESS == 1) {
+      uint8_t length=SERMSG_VAR_LENGTH;
       for (uint8_t i=0; i<length; i++) {
-        Serial.print((char)msgbuffer[i+3]);  
+        Serial.print((char) SERMSG_VAR_MESSAGE(i));  
       }
+      sermsg_send_confirm(TARGET_TEENSY, 1);
     }
   }
   else if (type == SERMSG_GET_SHORT){
-    if (msgbuffer[1] == 1) {
+    if (SERMSG_ADDRESS == 1) {
       digitalWrite(2,LOW);
-      if (sermsg_send_get_reply(&Serial1, 1, log_kbdbuf[log_kbd_floor]) == 0)
+      if (sermsg_send_get_reply(TARGET_TEENSY, 1, log_kbdbuf[log_kbd_floor]) == 0) {
         log_kbd_floor++;
+      }
     }
-    else if (msgbuffer[1] == 2) {
-      sermsg_send_get_reply(&Serial1, 2, log_diff);
+    else if (SERMSG_ADDRESS == 2) {
+      sermsg_send_get_reply(TARGET_TEENSY, 2, log_diff);
     }
   }
 }
@@ -67,15 +69,16 @@ void log_loop()
   
   if ( log_diff != log_lastdiff ) {
     log_lastdiff=log_diff;
-    if ( log_diff )
-      digitalWrite(2,HIGH);
-    else
-      digitalWrite(2,LOW);
-//    Serial.print("Diff: ");
-//    Serial.println((int)log_diff);
   } 
 
-  
-  
+  if ( log_diff && !msgevent ) {
+    digitalWrite(2,HIGH);
+    io_status |= 0x01;  // Set KBD available flag
+  }
+  else {
+    digitalWrite(2,LOW);
+    io_status &= ~0x01;
+  }
+ 
   return;
 }
