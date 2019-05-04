@@ -79,6 +79,9 @@ void loop()
       case 3:
         lpt_msg();
         break;
+      case 4:
+        lptio_msg();
+        break;
     }
     msgevent = 0;
     return;

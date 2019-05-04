@@ -266,6 +266,9 @@ uint8_t microme_basic_load(char *filename)
   if (strcmp(filename,"/") == 0) {
     return reinit(); 
   }
+  else if (strcmp(filename,"$") == 0) {
+    return microme_dir_load(); 
+  }
   
   microme_basic_new();
 
@@ -287,6 +290,31 @@ uint8_t microme_basic_load(char *filename)
   
   end_ptr = pos;
   make_index();
+  return(0);
+}
+
+uint8_t microme_dir_load() 
+{
+  uint16_t pos = 0;
+  
+  microme_basic_new();
+
+  uvga.print("Loading directory");
+  uvga.println(" ...");
+
+  if (open(4,"$")) {
+    while (available(4)) {
+      uint8_t len = read(4, (uint8_t*)basic_prog, pos, MAX_FILE_CHUNK_SIZE);
+      pos+=len;
+    }
+  }
+  else {
+    uvga.println("ERROR!: Can't load directory");
+    return(1);
+  }
+  close(4);
+  
+  end_ptr = pos;
   return(0);
 }
 
@@ -314,7 +342,5 @@ uint8_t microme_basic_save(char *filename)
   }
   close(0);
   
-  end_ptr = pos;
-  make_index();
   return(0);
 }

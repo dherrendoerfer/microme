@@ -42,58 +42,10 @@ void sdcard_init()
     sd_present = 1;  
   }
 
-  root = SD.open("/");
-}
-
-
-void printDirectory(File dir, int numTabs) {
-   while(true) {
-     
-     File entry =  dir.openNextFile();
-     if (! entry) {
-       // no more files
-       //Serial.println("**nomorefiles**");
-       break;
-     }
-     for (uint8_t i=0; i<numTabs; i++) {
-       Serial.print('\t');
-     }
-     Serial.print(entry.name());
-     if (entry.isDirectory()) {
-       Serial.println("/");
-       printDirectory(entry, numTabs+1);
-     } else {
-       // files have sizes, directories do not
-       Serial.print("\t\t");
-       Serial.println(entry.size(), DEC);
-     }
-     entry.close();
-   }
 }
 
 void sdcard_msg()
 {
-  uint8_t type = SERMSG_MSGTYPE;
-
-  if (type == SERMSG_SEND_VAR){
-    if (SERMSG_ADDRESS == 1) {
-      uint8_t length=SERMSG_VAR_LENGTH;
-      for (uint8_t i=0; i<length; i++) {
-        Serial.print((char) SERMSG_VAR_MESSAGE(i));  
-      }
-    }
-    sermsg_send_confirm(TARGET_TEENSY, 1); //confirm all packets
-  }
-  else if (type == SERMSG_GET_SHORT){
-    if (SERMSG_ADDRESS == 1) {
-      digitalWrite(2,LOW);
-      if (sermsg_send_get_reply(TARGET_TEENSY, 1, log_kbdbuf[log_kbd_floor]) == 0)
-        log_kbd_floor++;
-    }
-    else if (SERMSG_TARGET == 2) {
-      sermsg_send_get_reply(TARGET_TEENSY, 2, log_diff);
-    }
-  }
 }
 
 void sdcard_file(uint8_t fd)
@@ -215,6 +167,133 @@ void sdcard_file(uint8_t fd)
   }
 }
 
+uint8_t dir_status = 0;
+static uint8_t dir_vfile[2048] = {0,0}; 
+uint16_t dir_vfile_size = 0;
+uint16_t dir_vfile_ptr = 0;
+
+uint8_t gen_dir_vfile(File dir)
+{
+  char *spaces = "     ";
+  char tmp[32] = {0};
+  uint8_t i;
+  
+  dir_vfile_size = 0; //Start over new
+  dir_vfile_ptr = 0;
+
+  dir.rewindDirectory();
+  
+  while(true) {
+   
+   File entry =  dir.openNextFile();
+   if (! entry) {
+     break;
+   }
+
+   if (!entry.isDirectory()) {
+     if (entry.size() != 0) {
+       i = floor(log10(entry.size()));
+     } else {
+       i = 1; 
+     }
+    
+     sprintf(tmp,"%d %s %s \n",entry.size(),&spaces[i],entry.name());
+     i = strlen(tmp);
+     
+     memcpy(&dir_vfile[dir_vfile_size], tmp, i);
+     dir_vfile_size += i;
+     dir_vfile[dir_vfile_size+1] = 0;
+   }
+   entry.close();
+  }
+}
+
+void sdcard_directory()
+{
+  uint8_t type = SERMSG_MSGTYPE;
+  uint8_t filename[MAX_FILENAME_LENGTH];
+  uint8_t i;
+
+  if (type == SERMSG_SEND_VAR){
+    // Open a file (ADDRESS: 1)
+    if (SERMSG_ADDRESS == 1) {
+      uint8_t length=SERMSG_VAR_LENGTH;
+      for (i=0; i<length; i++) {
+        filename[i] = SERMSG_VAR_MESSAGE(i);          
+      }
+      filename[i] = 0;
+
+      root = SD.open("/");
+      gen_dir_vfile(root);
+      root.close();
+      
+      dir_status = FILE_STATUS_OPEN;
+
+      DEBUG_PRINT("Opened file: ");
+      DEBUG_PRINTLN((char*)filename);
+    }
+    sermsg_send_confirm(TARGET_TEENSY, 1); //confirm all packets
+  }  
+  else if (type == SERMSG_GET_SHORT){
+    if (SERMSG_ADDRESS == 1) {
+      // Get file status
+
+      DEBUG_PRINT("Getting directory file status: ");
+
+      sermsg_send_get_reply(TARGET_TEENSY, 1, dir_status);        
+    }
+    else if (SERMSG_ADDRESS == 2) {
+      // Get available()
+      int avail = dir_vfile_size - dir_vfile_ptr;
+
+      DEBUG_PRINT("Getting avail: ");
+      DEBUG_PRINTLN((int)avail);
+      
+      if (avail < FILE_TRANSFER_BUFFER)
+        sermsg_send_get_reply(TARGET_TEENSY, 2, avail);
+      else
+        sermsg_send_get_reply(TARGET_TEENSY, 2, MAX_FILE_CHUNK_SIZE);
+    }
+  }
+  else if (type == SERMSG_SEND_SHORT){
+    if (SERMSG_ADDRESS == 1) {
+      // Close file
+
+      DEBUG_PRINT("Closing directory file: ");
+
+      dir_vfile[0] = 0;
+      dir_vfile_size = 0;
+      dir_vfile_ptr = 0;
+      dir_status = 0;
+    }
+    sermsg_send_confirm(TARGET_TEENSY, 1); //confirm all packets
+  }
+  else if (type == SERMSG_GET_VAR){
+    if (SERMSG_ADDRESS == 1) {
+      // Read up to 64 bytes of a file
+      uint8_t data[FILE_TRANSFER_BUFFER];
+      uint8_t length=SERMSG_VAR_LENGTH;
+      uint8_t len;
+      uint16_t avail = dir_vfile_size - dir_vfile_ptr;
+
+      DEBUG_PRINT("  requested data size: ");
+      DEBUG_PRINTLN((int)length);
+
+      if (avail > length-1)
+        len=length-1;
+      else
+        len=avail;
+
+      DEBUG_PRINT("Reading directory file: ");
+
+      memcpy(&data[1], &dir_vfile[dir_vfile_ptr], len);
+      dir_vfile_ptr += len;
+
+      data[0] = len;
+      sermsg_send_var_get_reply(TARGET_TEENSY, 1, length, data);
+    }
+  }
+}
 
 void sdcard_loop()
 {

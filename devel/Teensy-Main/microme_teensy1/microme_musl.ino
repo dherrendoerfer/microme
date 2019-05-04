@@ -32,6 +32,9 @@ static void microme_musl_exec(char *line)
   mu_add_func(m, "wait", my_wait);
   mu_add_func(m, "pokea", my_pokea);
   mu_add_func(m, "pokeb", my_pokeb);
+  mu_add_func(m, "peeka", my_peeka);
+  mu_add_func(m, "peekb", my_peekb);
+  
   mu_add_func(m, "settime", my_settime);
 
   mu_add_func(m, "random", my_rand);
@@ -126,6 +129,46 @@ static struct mu_par my_pokeb(struct musl *m, int argc, struct mu_par argv[]) {
                               mu_par_int(m, 1, argc, argv), 
                               mu_par_int(m, 2, argc, argv));
 
+  return rv;
+}
+
+/*@ ##peeka( dev, addr )
+ *# Reads a byte from device A
+ */
+static struct mu_par my_peeka(struct musl *m, int argc, struct mu_par argv[]) {
+  struct mu_par rv;
+  uint8_t data;
+
+  rv.type = mu_int;
+  rv.v.i = 0;
+
+  if(!sermsg_get_short(TARGET_ARDUINO, mu_par_int(m, 0, argc, argv), 
+                              mu_par_int(m, 1, argc, argv), 
+                              &data)) {
+
+    rv.v.i = data;
+  }  
+      
+  return rv;
+}
+
+/*@ ##peekb( dev, addr )
+ *# Reads a byte from device B
+ */
+static struct mu_par my_peekb(struct musl *m, int argc, struct mu_par argv[]) {
+  struct mu_par rv;
+  uint8_t data;
+
+  rv.type = mu_int;
+  rv.v.i = 0;
+
+  if(!sermsg_get_short(TARGET_TEENSY2, mu_par_int(m, 0, argc, argv), 
+                              mu_par_int(m, 1, argc, argv), 
+                              &data)) {
+
+    rv.v.i = data;
+  }  
+      
   return rv;
 }
 
@@ -299,6 +342,14 @@ static struct mu_par my_get_s(struct musl *m, int argc, struct mu_par argv[]) {
   if(microme_input_available()){
     microme_read_input((uint8_t*)&rv.v.s[0]);
   }
+
+  if(argc > 1) {
+    const char * name = mu_par_str(m, 1, argc, argv);
+    mu_set_str(m, name, rv.v.s);
+  }
       
   return rv;
 }
+
+
+

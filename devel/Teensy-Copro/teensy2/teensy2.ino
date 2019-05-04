@@ -100,6 +100,9 @@ void loop() {
       case 4:
         sdcard_file(0); // File IO for file 0
         break;
+      case 8:
+        sdcard_directory(); // File IO for the directory file only
+        break;
     }
     msgevent = 0;
     return;

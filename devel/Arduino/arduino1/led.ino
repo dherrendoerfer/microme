@@ -54,7 +54,7 @@ void led_msg()
       led_update = 1;
     }
     else if (SERMSG_ADDRESS < 40) { 
-      uint8_t led = SERMSG_ADDRESS-30;
+      uint8_t led = (SERMSG_ADDRESS-30)*3;
       LEDS[led++] = (SERMSG_DATA & B00011100) << 3;
       LEDS[led++] = (SERMSG_DATA & B11100000);
       LEDS[led++] = (SERMSG_DATA & B00000011) << 6;

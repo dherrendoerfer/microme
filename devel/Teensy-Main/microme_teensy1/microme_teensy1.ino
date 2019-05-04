@@ -1,3 +1,4 @@
+
 /*
  * microME Teensy Main-Processor sample firmware
  * Copyright (C) 2019 D.Herrendoerfer 
@@ -127,7 +128,7 @@ void loop() {
   uvga.println(" home computer");
   uvga.println("         by dherrendoerfer");
   uvga.println("");
-  uvga.println("    firmware version 0.08 alpha ");
+  uvga.println("    firmware version 0.80 beta ");
   uvga.println("");
   uvga.print("    basic program memory:    ");
   uvga.print(sizeof(basic_prog));

@@ -60,7 +60,7 @@ uint8_t read(uint8_t fd)
   return(ret);
 }
 
-int read(int fd, uint8_t *buffer, uint8_t pos, uint8_t length)
+int read(int fd, uint8_t *buffer, uint16_t pos, uint8_t length)
 {
   uint8_t tmpbuffer[FILE_TRANSFER_BUFFER];
   
@@ -73,7 +73,7 @@ int read(int fd, uint8_t *buffer, uint8_t pos, uint8_t length)
   return(tmpbuffer[0]);
 }
 
-int write(int fd, uint8_t *buffer, uint8_t pos, uint8_t length)
+int write(int fd, uint8_t *buffer, uint16_t pos, uint8_t length)
 {
   if (sermsg_send_var(TARGET_TEENSY2, 4+fd, 3, length, (uint8_t*)&buffer[pos])) {
     return 0;  
